@@ -198,7 +198,7 @@ def weather(message):
         bot.send_message(message.chat.id, "ehm something go wrong, try again with correct format")
 
 
-@bot.message_handler(commands=["sub2ch"])
+@bot.message_handler(commands=["2chsub"])
 def two_chan_sub(message):
     try:
         threads_message = message.text[7:].split()
@@ -214,6 +214,7 @@ def two_chan_sub(message):
                 thread.update(thread_in_for)
             elif thread_list_check:
                 bot.send_message(message.chat.id, "some sections has wrong format, sections that was entered correctly are added")
+                thread_list_check = False
         thread_main = dict_get("F:/telebot/user_data.json")
         try:
             thread_main[str(message.chat.id)]["threads"].update(thread)
@@ -235,55 +236,66 @@ def two_chan_sub(message):
         bot.send_message(message.chat.id, "wrong sections name")
 
 
-@bot.message_handler(commands=["unsub2ch"])
+@bot.message_handler(commands=["2chunsub"])
 def two_chan_unsub(message):
+    threads_list = "d b o soc media r rf int po news hry au bi biz bo c em fa fiz fl ftb hh hi me mg mlp mo mov mu " \
+                   "ne psy re sci sf sn sp spc tv un w tes v vg wr a fd ja ma vn" \
+                   "wh wm wp zog de di diy mus pa p wrk trv gd hw mobi pr ra s t web bg cg gsg ruvn"
+    threads_list_check = True
     try:
         threads_message = message.text[9:].split()
         thread = dict_get("F:/telebot/user_data.json")
 
         for i in threads_message:
-            del thread[str(message.chat.id)]["threads"][i]
+            if i in threads_list:
+                del thread[str(message.chat.id)]["threads"][i]
+            elif threads_list_check:
+                bot.send_message(message.chat.id, "some sections has wrong format, sections that was entered correctly are deleted")
+                threads_list_check = False
 
         dict_load("F:/telebot/user_data.json", thread)
 
     except:
-        bot.send_message(message.chat.id, "wrong sections name")
+        bot.send_message(message.chat.id, "you may not have that subscriptions")
 
 
-@bot.message_handler(commands=["start2ch"])
+@bot.message_handler(commands=["2chstart"])
 def two_chan_start(message):
-    thread = dict_get("F:/telebot/user_data.json")
-    thread[str(message.chat.id)]["checks"]["check_running"] = True
-    dict_load("F:/telebot/user_data.json", thread)
-
-    while thread[str(message.chat.id)]["checks"]["check_running"]:
-        threads_true = get_key(thread[str(message.chat.id)]["threads"], True)
-
-        for i in threads_true:
-            html = json.loads(requests.get("https://2ch.hk/" + i + "/catalog_num.json").text)
-
-            if thread[str(message.chat.id)]["threads"][i][1] != html["threads"][0]["num"]:
-                answer, photo = parse_html(html)
-                thread[str(message.chat.id)]["threads"][i][1] = html["threads"][0]["num"]
-
-                if not html["threads"][0]["comment"] == "":
-                    bot.send_message(message.chat.id, answer)
-                else:
-                    bot.send_message(message.chat.id, "no text in thread")
-
-                try:
-                    bot.send_photo(message.chat.id, requests.get("https://2ch.hk" + photo).content)
-                except telebot.apihelper.ApiTelegramException:
-                    try:
-                        bot.send_video(message.chat.id, requests.get("https://2ch.hk" + photo).content)
-                    except telebot.apihelper.ApiTelegramException:
-                        pass
-        dict_load("F:/telebot/user_data.json", thread)
-        time.sleep(thread[str(message.chat.id)]["checks"]["two_chan_wait"])
+    try:
         thread = dict_get("F:/telebot/user_data.json")
+        thread[str(message.chat.id)]["checks"]["check_running"] = True
+        dict_load("F:/telebot/user_data.json", thread)
+
+        while thread[str(message.chat.id)]["checks"]["check_running"]:
+            threads_true = get_key(thread[str(message.chat.id)]["threads"], True)
+
+            for i in threads_true:
+                html = json.loads(requests.get("https://2ch.hk/" + i + "/catalog_num.json").text)
+
+                if thread[str(message.chat.id)]["threads"][i][1] != html["threads"][0]["num"]:
+                    answer, photo = parse_html(html)
+                    thread[str(message.chat.id)]["threads"][i][1] = html["threads"][0]["num"]
+
+                    if not html["threads"][0]["comment"] == "":
+                        bot.send_message(message.chat.id, answer)
+                    else:
+                        bot.send_message(message.chat.id, "no text in thread")
+
+                    try:
+                        bot.send_photo(message.chat.id, requests.get("https://2ch.hk" + photo).content)
+                    except telebot.apihelper.ApiTelegramException:
+                        try:
+                            bot.send_video(message.chat.id, requests.get("https://2ch.hk" + photo).content)
+                        except telebot.apihelper.ApiTelegramException:
+                            pass
+            dict_load("F:/telebot/user_data.json", thread)
+            time.sleep(thread[str(message.chat.id)]["checks"]["two_chan_wait"])
+            thread = dict_get("F:/telebot/user_data.json")
+    except:
+        bot.send_message("you dont have subscriptions, firstly subscribe on section(s) and then start")
 
 
-@bot.message_handler(commands=["cooldown2ch"])
+@bot.message_handler(commands=["2chcooldown"])
 def two_chan_cooldown(message):
     try:
         thread = dict_get("F:/telebot/user_data.json")
@@ -295,26 +307,29 @@ def two_chan_cooldown(message):
         bot.send_message(message.chat.id, "idk what did you entered")
 
 
-@bot.message_handler(commands=["stop2ch"])
+@bot.message_handler(commands=["2chstop"])
 def two_chan_stop(message):
-    thread = dict_get("F:/telebot/user_data.json")
-    thread[str(message.chat.id)]["checks"]["check_running"] = False
-    dict_load("F:/telebot/user_data.json", thread)
+    try:
+        thread = dict_get("F:/telebot/user_data.json")
+        thread[str(message.chat.id)]["checks"]["check_running"] = False
+        dict_load("F:/telebot/user_data.json", thread)
+    except:
+        bot.send_message(message.chat.id, "try firstly subsribe and start")
 
 
-@bot.message_handler(commands=["help2ch"])
+@bot.message_handler(commands=["2chhelp"])
 def two_chan_help(message):
-    bot.send_message(message.chat.id, f"/sub2ch [thread1] [thread2] ... this command uses for subscribe on 2ch section "
-                                      f"and then when you use /star2ch send to you newest thread every "
-                                      f"[cooldown2ch] seconds example: /sub2ch a b (subs on a/ and b/)\n"
-                                      f"/unsub2ch [thread1] [thread2] ... with this command you can unsubscribe from "
+    bot.send_message(message.chat.id, f"/2chsub [thread1] [thread2] ... this command uses for subscribe on 2ch section "
+                                      f"and then when you use /2chstart send to you newest thread every "
+                                      f"[2chcooldown] seconds example: /sub2ch a b (subs on a/ and b/)\n"
+                                      f"/2chunsub [thread1] [thread2] ... with this command you can unsubscribe from "
                                       f"2ch section example: /unsub2ch a b (unsubs from a/ and b/) \n"
-                                      f"/start2ch command with no arguments, after you write this command bot will "
+                                      f"/2chstart command with no arguments, after you write this command bot will "
                                       f"send you newest thread every [coldown2ch] seconds example: /start2ch\n"
-                                      f"/cooldown2ch [time in seconds] time intervals through which threads will"
+                                      f"/2chcooldown [time in seconds] time intervals through which threads will"
                                       f"be sended to you example: /cooldown2ch 800 (will send thread every 800 secs)\n"
-                                      f"/stop2ch stop sending thread without updating subscribed sections "
-                                      f"example: /stop2ch")
+                                      f"/2chstop stop sending thread without updating subscribed sections "
+                                      f"example: /2chsub")
 
 
 @bot.message_handler(commands=["quadratic_eq"])
@@ -364,4 +379,4 @@ def random_message(message):
     bot.send_message(message.chat.id, "wrong command")
 
 
-bot.polling()
+bot.polling(none_stop=True)
