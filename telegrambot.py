@@ -1,9 +1,25 @@
-import urllib.request
 from datetime import datetime
 import wikipedia
 from telebot import types
 from pyowm import OWM
+import time
 import telebot
+import json
+import requests
+import re
+
+bot = telebot.TeleBot("1235868231:AAH7bJMZmyOswO8xcXpJfu7URMQr8V8qCbA")
+
+
+def dict_load(path, thread):
+    with open(path, "w") as f:
+        json.dump(thread, f)
+
+
+def dict_get(path):
+    with open(path) as f:
+        thread = json.load(f)
+    return thread
 
 
 def date_check(dateinp):
@@ -13,7 +29,19 @@ def date_check(dateinp):
     return min_date <= dateinp <= max_date
 
 
-bot = telebot.TeleBot("1235868231:AAH7bJMZmyOswO8xcXpJfu7URMQr8V8qCbA")
+def get_key(dic, value):
+    lst = list()
+    for k, v in dic.items():
+        if v[0] == value:
+            lst.append(k)
+    return lst
+
+
+def parse_html(html):
+    cleanr = re.compile('<.*?>|&([a-z0-9]+|#[0-9]{1,6}|#x[0-9a-f]{1,6});')
+    cleanhtml = re.sub(cleanr, '', html["threads"][0]["comment"])
+    photo = html["threads"][0]["files"][0]["path"]
+    return cleanhtml, photo
 
 
 @bot.message_handler(commands=["currency"])
@@ -27,8 +55,7 @@ def currency(message):
 
             if date_check(date):
                 date = datetime.strftime(date, "%d/%m/%Y")
-                url = "http://www.cbr.ru/scripts/XML_daily.asp?date_req=" + date
-                html = str(urllib.request.urlopen(url).read())
+                html = requests.get("http://www.cbr.ru/scripts/XML_daily.asp?date_req=" + date).text
                 if currency in html:
                     bot.send_message(message.chat.id,
                                      f"Курс рубля к {currency} на {date}: {html[html.find('Value', html.find(currency)) + 6:html.find(',', html.find(currency)) + 5].replace(',', '.')}")
@@ -44,13 +71,25 @@ def currency(message):
 
 @bot.message_handler(commands=["wiki"])
 def wiki(message):
+    text_splitted = message.text.split()
+    del text_splitted[0]
 
-    wikipedia.set_lang(message.from_user.language_code)
+    if text_splitted[-1] in wikipedia.languages():
+        language_code = text_splitted[-1]
+        del text_splitted[-1]
+    else:
+        language_code = "en"
+
+    wikipedia.set_lang(language_code)
+
+    request = " ".join(text_splitted)
+
+    bot.send_chat_action(chat_id=message.chat.id, action="typing")
 
     try:
-        bot.send_message(message.chat.id, wikipedia.summary(message.text[6:], sentences=2))
+        bot.send_message(message.chat.id, wikipedia.summary(request, sentences=2))
     except BaseException:
-        bot.send_message(message.chat.id, "amm, wheres request")
+        bot.send_message(message.chat.id, "amm, something goes wrong")
 
 
 @bot.message_handler(commands=["horoscope"])
@@ -99,34 +138,42 @@ def horoscope(message):
 @bot.callback_query_handler(func=lambda call: True)
 def callback_horoscope(callback):
     if callback.data[:6] == "/?znak":
-        url = "https://1001goroskop.ru" + callback.data
-        html = urllib.request.urlopen(url).read().decode(encoding='cp1251')
-        bot.send_message(callback.message.chat.id, html[html.find('<div itemprop="description">') + 31:html.find("<", html.find('<div itemprop="description">') + 31)])
+        html = requests.get("https://1001goroskop.ru" + callback.data).text
+        bot.send_message(callback.message.chat.id, html[html.find('<div itemprop="description">') + 31:html.find("<",
+                                                                                                                 html.find(
+                                                                                                                     '<div itemprop="description">') + 31)])
     else:
         pass
 
 
 @bot.message_handler(commands=["weatherme"])
 def weather_me(message):
-    keyboard = types.ReplyKeyboardMarkup(row_width=1, resize_keyboard=True, one_time_keyboard=True)
-    button_geo = types.KeyboardButton(text="Send location", request_location=True)
-    keyboard.add(button_geo)
-    bot.send_message(message.chat.id, "Send me your location for this function", reply_markup=keyboard)
+    try:
+        keyboard = types.ReplyKeyboardMarkup(row_width=1, resize_keyboard=True, one_time_keyboard=True)
+        button_geo = types.KeyboardButton(text="Send location", request_location=True)
+        keyboard.add(button_geo)
+        bot.send_message(message.chat.id, "Send me your location for this function", reply_markup=keyboard)
+    except:
+        bot.send_message(message.chat.id, "something go wrong, try again")
 
 
 @bot.message_handler(content_types=["location"])
 def location(message):
-    if message.location is not None:
-        owm = OWM("64bb872cc3a41a75c241d41959081523")
-        mgr = owm.weather_manager()
-        data = mgr.one_call(lat=message.location.latitude, lon=message.location.longitude)
-        bot.send_message(message.chat.id,
-                            f"Temperature in your location for today: {data.current.temperature('celsius').get('temp')}°C, "
-                            f"feels like: {data.current.temperature('celsius').get('feels_like')}°C. "
-                            f"Pressure for today: {data.current.pressure.get('press')} hPa. "
-                            f"Clouds: {data.current.clouds}%. "
-                            f"Humidity: {data.current.humidity}%. "
-                            f"Wind speed: {data.current.wind().get('speed')} m/s", reply_markup=types.ReplyKeyboardRemove())
+    try:
+        if message.location is not None:
+            owm = OWM("64bb872cc3a41a75c241d41959081523")
+            mgr = owm.weather_manager()
+            data = mgr.one_call(lat=message.location.latitude, lon=message.location.longitude)
+            bot.send_message(message.chat.id,
+                             f"Temperature in your location for today: {data.current.temperature('celsius').get('temp')}°C, "
+                             f"feels like: {data.current.temperature('celsius').get('feels_like')}°C. "
+                             f"Pressure for today: {data.current.pressure.get('press')} hPa. "
+                             f"Clouds: {data.current.clouds}%. "
+                             f"Humidity: {data.current.humidity}%. "
+                             f"Wind speed: {data.current.wind().get('speed')} m/s",
+                             reply_markup=types.ReplyKeyboardRemove())
+    except:
+        bot.send_message(message.chat.id, "something go wrong, try again")
 
 
 @bot.message_handler(commands=["weather"])
@@ -138,16 +185,136 @@ def weather(message):
         observation = mgr.weather_at_place(location)
         weather = observation.weather
 
-        bot.send_message(message.chat.id, f"Temperature in {location} for today: {weather.temperature('celsius').get('temp')}°C, "
-                                              f"feels like: {weather.temperature('celsius').get('feels_like')}°C. "
-                                              f"Pressure for today: {weather.pressure.get('press')} hPa. "
-                                              f"Clouds: {weather.clouds}%. "
-                                              f"Humidity: {weather.humidity}%. "
-                                              f"Wind speed: {weather.wind().get('speed')} m/s")
+        bot.send_message(message.chat.id,
+                         f"Temperature in {location} for today: {weather.temperature('celsius').get('temp')}°C, "
+                         f"feels like: {weather.temperature('celsius').get('feels_like')}°C. "
+                         f"Pressure for today: {weather.pressure.get('press')} hPa. "
+                         f"Clouds: {weather.clouds}%. "
+                         f"Humidity: {weather.humidity}%. "
+                         f"Wind speed: {weather.wind().get('speed')} m/s")
 
     except:
 
         bot.send_message(message.chat.id, "ehm something go wrong, try again with correct format")
+
+
+@bot.message_handler(commands=["sub2ch"])
+def two_chan_sub(message):
+    try:
+        threads_message = message.text[7:].split()
+        thread = {}
+        thread_list_check = True
+        threads_list = "d b o soc media r rf int po news hry au bi biz bo c em fa fiz fl ftb hh hi me mg mlp mo mov mu " \
+                       "ne psy re sci sf sn sp spc tv un w tes v vg wr a fd ja ma vn" \
+                       "wh wm wp zog de di diy mus pa p wrk trv gd hw mobi pr ra s t web bg cg gsg ruvn"
+
+        for i in threads_message:
+            if i in threads_list:
+                thread_in_for = {i: [True, None]}
+                thread.update(thread_in_for)
+            elif thread_list_check:
+                bot.send_message(message.chat.id, "some sections has wrong format, sections that was entered correctly are added")
+        thread_main = dict_get("F:/telebot/user_data.json")
+        try:
+            thread_main[str(message.chat.id)]["threads"].update(thread)
+        except:
+            thread_id = {str(message.chat.id): {"threads": {}}}
+            thread_main.update(thread_id)
+            thread_main[str(message.chat.id)]["threads"].update(thread)
+
+        try:
+            thread_main[str(message.chat.id)]["checks"]
+
+        except KeyError:
+            thread_checks = {"checks": {"check_running": False, "two_chan_wait": 600}}
+            thread_main[str(message.chat.id)].update(thread_checks)
+
+        dict_load("F:/telebot/user_data.json", thread_main)
+
+    except:
+        bot.send_message(message.chat.id, "wrong sections name")
+
+
+@bot.message_handler(commands=["unsub2ch"])
+def two_chan_unsub(message):
+    try:
+        threads_message = message.text[9:].split()
+        thread = dict_get("F:/telebot/user_data.json")
+
+        for i in threads_message:
+            del thread[str(message.chat.id)]["threads"][i]
+
+        dict_load("F:/telebot/user_data.json", thread)
+
+    except:
+        bot.send_message(message.chat.id, "wrong sections name")
+
+
+@bot.message_handler(commands=["start2ch"])
+def two_chan_start(message):
+    thread = dict_get("F:/telebot/user_data.json")
+    thread[str(message.chat.id)]["checks"]["check_running"] = True
+    dict_load("F:/telebot/user_data.json", thread)
+
+    while thread[str(message.chat.id)]["checks"]["check_running"]:
+        threads_true = get_key(thread[str(message.chat.id)]["threads"], True)
+
+        for i in threads_true:
+            html = json.loads(requests.get("https://2ch.hk/" + i + "/catalog_num.json").text)
+
+            if thread[str(message.chat.id)]["threads"][i][1] != html["threads"][0]["num"]:
+                answer, photo = parse_html(html)
+                thread[str(message.chat.id)]["threads"][i][1] = html["threads"][0]["num"]
+
+                if not html["threads"][0]["comment"] == "":
+                    bot.send_message(message.chat.id, answer)
+                else:
+                    bot.send_message(message.chat.id, "no text in thread")
+
+                try:
+                    bot.send_photo(message.chat.id, requests.get("https://2ch.hk" + photo).content)
+                except telebot.apihelper.ApiTelegramException:
+                    try:
+                        bot.send_video(message.chat.id, requests.get("https://2ch.hk" + photo).content)
+                    except telebot.apihelper.ApiTelegramException:
+                        pass
+        dict_load("F:/telebot/user_data.json", thread)
+        time.sleep(thread[str(message.chat.id)]["checks"]["two_chan_wait"])
+        thread = dict_get("F:/telebot/user_data.json")
+
+
+@bot.message_handler(commands=["cooldown2ch"])
+def two_chan_cooldown(message):
+    try:
+        thread = dict_get("F:/telebot/user_data.json")
+        thread[str(message.chat.id)]["checks"]["two_chan_wait"] = int(message.text[12:len(message.text)])
+        dict_load("F:/telebot/user_data.json", thread)
+    except ValueError:
+        bot.send_message(message.chat.id, "argument must be integer number")
+    except:
+        bot.send_message(message.chat.id, "idk what did you entered")
+
+
+@bot.message_handler(commands=["stop2ch"])
+def two_chan_stop(message):
+    thread = dict_get("F:/telebot/user_data.json")
+    thread[str(message.chat.id)]["checks"]["check_running"] = False
+    dict_load("F:/telebot/user_data.json", thread)
+
+
+@bot.message_handler(commands=["help2ch"])
+def two_chan_help(message):
+    bot.send_message(message.chat.id, f"/sub2ch [thread1] [thread2] ... this command uses for subscribe on 2ch section "
+                                      f"and then when you use /star2ch send to you newest thread every "
+                                      f"[cooldown2ch] seconds example: /sub2ch a b (subs on a/ and b/)\n"
+                                      f"/unsub2ch [thread1] [thread2] ... with this command you can unsubscribe from "
+                                      f"2ch section example: /unsub2ch a b (unsubs from a/ and b/) \n"
+                                      f"/start2ch command with no arguments, after you write this command bot will "
+                                      f"send you newest thread every [coldown2ch] seconds example: /start2ch\n"
+                                      f"/cooldown2ch [time in seconds] time intervals through which threads will"
+                                      f"be sended to you example: /cooldown2ch 800 (will send thread every 800 secs)\n"
+                                      f"/stop2ch stop sending thread without updating subscribed sections "
+                                      f"example: /stop2ch")
 
 
 @bot.message_handler(commands=["quadratic_eq"])
@@ -197,4 +364,4 @@ def random_message(message):
     bot.send_message(message.chat.id, "wrong command")
 
 
-bot.polling(none_stop=True, interval=0)
+bot.polling()
